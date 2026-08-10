@@ -25,7 +25,6 @@ def chat_mode(state: ChatState):
 
     return {'messages': [response]}
 
-CONFIG = {'configurable': {'thread_id': '1'}}
 
 checkpointer = InMemorySaver()
 graph = StateGraph(ChatState)
