@@ -37,10 +37,22 @@ checkpointer = SqliteSaver(conn)
 
 # --- Title Management ---
 conn.execute("CREATE TABLE IF NOT EXISTS thread_titles (thread_id TEXT PRIMARY KEY, title TEXT)")
+try:
+    conn.execute("ALTER TABLE thread_titles ADD COLUMN is_pinned INTEGER DEFAULT 0")
+except sqlite3.OperationalError:
+    pass # column already exists
 conn.commit()
 
 def save_thread_title(thread_id: str, title: str):
-    conn.execute("INSERT OR REPLACE INTO thread_titles (thread_id, title) VALUES (?, ?)", (thread_id, title))
+    conn.execute("INSERT OR IGNORE INTO thread_titles (thread_id, title, is_pinned) VALUES (?, ?, 0)", (thread_id, title))
+    conn.commit()
+
+def pin_thread(thread_id: str, is_pinned: int):
+    conn.execute("UPDATE thread_titles SET is_pinned = ? WHERE thread_id = ?", (is_pinned, thread_id))
+    conn.commit()
+
+def rename_thread(thread_id: str, new_title: str):
+    conn.execute("UPDATE thread_titles SET title = ? WHERE thread_id = ?", (new_title, thread_id))
     conn.commit()
 
 def generate_title(user_input: str) -> str:
@@ -53,10 +65,16 @@ def generate_title(user_input: str) -> str:
     
     return content.strip(' "\'\n')
 
+def delete_thread(thread_id: str):
+    conn.execute("DELETE FROM thread_titles WHERE thread_id = ?", (thread_id,))
+    conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+    conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+    conn.commit()
+
 # to find total number of threads
 def retrieve_all_threads():
-    cursor = conn.execute("SELECT thread_id, title FROM thread_titles")
-    titles = {row[0]: row[1] for row in cursor.fetchall()}
+    cursor = conn.execute("SELECT thread_id, title, is_pinned FROM thread_titles")
+    titles = {row[0]: {"title": row[1], "is_pinned": row[2] or 0} for row in cursor.fetchall()}
 
     all_threads = []
     seen = set()
@@ -65,11 +83,15 @@ def retrieve_all_threads():
         t_id = checkpoint.config['configurable']['thread_id']
         if t_id not in seen:
             seen.add(t_id)
+            meta = titles.get(t_id, {})
             all_threads.append({
                 "id": t_id,
-                "title": titles.get(t_id, t_id)
+                "title": meta.get("title", t_id),
+                "is_pinned": meta.get("is_pinned", 0)
             })
 
+    # Sort threads so that pinned ones appear at the top (stable sort preserves time order)
+    all_threads.sort(key=lambda x: x["is_pinned"], reverse=True)
     return all_threads
 
 

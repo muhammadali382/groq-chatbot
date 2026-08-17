@@ -1,5 +1,5 @@
 import streamlit as st
-from backend import chatbot, retrieve_all_threads, generate_title, save_thread_title
+from backend import chatbot, retrieve_all_threads, generate_title, save_thread_title, delete_thread, pin_thread, rename_thread
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import time
 import uuid
@@ -65,7 +65,19 @@ if user_input:
     if st.session_state.thread_id not in existing_thread_ids:
         new_title = generate_title(user_input)
         save_thread_title(st.session_state.thread_id, new_title)
-        st.session_state.chat_threads.append({"id": st.session_state.thread_id, "title": new_title})
+        
+        new_thread = {"id": st.session_state.thread_id, "title": new_title, "is_pinned": 0}
+        
+        # Insert at the top (right after any pinned threads)
+        insert_idx = 0
+        for i, t in enumerate(st.session_state.chat_threads):
+            if not t.get("is_pinned"):
+                insert_idx = i
+                break
+        else:
+            insert_idx = len(st.session_state.chat_threads)
+            
+        st.session_state.chat_threads.insert(insert_idx, new_thread)
 
     with st.chat_message('user'):
         st.write(user_input)
@@ -85,7 +97,8 @@ if user_input:
         ):
             full_response += chunk.content
             response_placeholder.markdown(full_response)
-            time.sleep(0.03)
+        # Refresh the threads so the active chat jumps to the top of the list!
+        st.session_state.chat_threads = retrieve_all_threads()
 
 
 
@@ -96,7 +109,39 @@ if st.sidebar.button('New Chat'):
      new_chat()
      st.rerun()
 st.sidebar.header('My Conversations')
-for thread in st.session_state.chat_threads[::-1]:
-     if st.sidebar.button(thread["title"], key=thread["id"]):
-          st.session_state.thread_id = thread["id"]
-          st.rerun()
+for thread in st.session_state.chat_threads:
+     col1, col2 = st.sidebar.columns([4, 1])
+     
+     display_title = f"📌 {thread['title']}" if thread.get("is_pinned") else thread["title"]
+     
+     with col1:
+          if st.button(display_title, key=f"btn_{thread['id']}", use_container_width=True):
+               st.session_state.thread_id = thread["id"]
+               st.rerun()
+               
+     with col2:
+          with st.popover("⚙️"):
+               # Auto-save rename on Enter
+               new_name = st.text_input("Rename", value=thread["title"], key=f"ren_{thread['id']}")
+               if new_name and new_name != thread["title"]:
+                    rename_thread(thread["id"], new_name)
+                    st.session_state.chat_threads = retrieve_all_threads()
+                    st.rerun()
+                         
+               if thread.get("is_pinned"):
+                    if st.button("📍 Unpin", key=f"unpin_{thread['id']}", use_container_width=True):
+                         pin_thread(thread["id"], 0)
+                         st.session_state.chat_threads = retrieve_all_threads()
+                         st.rerun()
+               else:
+                    if st.button("📌 Pin", key=f"pin_{thread['id']}", use_container_width=True):
+                         pin_thread(thread["id"], 1)
+                         st.session_state.chat_threads = retrieve_all_threads()
+                         st.rerun()
+                         
+               if st.button("❌ Delete", key=f"del_{thread['id']}", use_container_width=True):
+                    delete_thread(thread["id"])
+                    st.session_state.chat_threads = retrieve_all_threads()
+                    if st.session_state.thread_id == thread["id"]:
+                         st.session_state.thread_id = None
+                    st.rerun()

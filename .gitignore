@@ -10,5 +10,7 @@ wheels/
 .venv
 
 main.py
+issues.md
+
 .env
 chatbot.db*
