@@ -1,5 +1,5 @@
 import streamlit as st
-from backend import chatbot, retrieve_all_threads
+from backend import chatbot, retrieve_all_threads, generate_title, save_thread_title
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import time
 import uuid
@@ -35,6 +35,12 @@ def new_chat():
 if "chat_threads" not in st.session_state:
     st.session_state.chat_threads = retrieve_all_threads()
 
+# Ensure backwards compatibility for hot-reloads where chat_threads might contain strings
+st.session_state.chat_threads = [
+    t if isinstance(t, dict) else {"id": t, "title": t}
+    for t in st.session_state.chat_threads
+]
+
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = None
 
@@ -55,8 +61,11 @@ if user_input:
 
     CONFIG = {'configurable': {'thread_id': st.session_state.thread_id}}
 
-    if st.session_state.thread_id not in st.session_state.chat_threads:
-        st.session_state.chat_threads.append(st.session_state.thread_id)
+    existing_thread_ids = [t["id"] for t in st.session_state.chat_threads]
+    if st.session_state.thread_id not in existing_thread_ids:
+        new_title = generate_title(user_input)
+        save_thread_title(st.session_state.thread_id, new_title)
+        st.session_state.chat_threads.append({"id": st.session_state.thread_id, "title": new_title})
 
     with st.chat_message('user'):
         st.write(user_input)
@@ -87,7 +96,7 @@ if st.sidebar.button('New Chat'):
      new_chat()
      st.rerun()
 st.sidebar.header('My Conversations')
-for thread_id in st.session_state.chat_threads[::-1]:
-     if st.sidebar.button(thread_id):
-          st.session_state.thread_id = thread_id
+for thread in st.session_state.chat_threads[::-1]:
+     if st.sidebar.button(thread["title"], key=thread["id"]):
+          st.session_state.thread_id = thread["id"]
           st.rerun()
