@@ -18,13 +18,21 @@ def gen_prechat(config):
     messages = state.values.get('messages', [])
 
     for message in messages:
-        if isinstance(message, HumanMessage):
-                with st.chat_message('user'):
-                    st.write(message.content)
+        msg_type = getattr(message, 'type', '')
 
-        if isinstance(message, AIMessage):  
-                  with st.chat_message('assistant'):
-                    st.write(message.content)
+        if msg_type == 'human':
+            with st.chat_message('user'):
+                st.write(message.content)
+
+        elif msg_type == 'tool':
+            # Show previously used tools as collapsed status boxes
+            with st.chat_message('assistant'):
+                with st.status(f"🔧 Tool: `{message.name}`", state="complete"):
+                    st.code(message.content, language=None)
+
+        elif msg_type == 'ai' and message.content:
+            with st.chat_message('assistant'):
+                st.write(message.content)
 
 # generate new chat with thread id
 def new_chat():
@@ -84,20 +92,38 @@ if user_input:
 
 
     with st.chat_message("assistant"):
+        tool_area = st.container()       # tool indicators render here
         response_placeholder = st.empty()
-
         full_response = ""
 
-        for chunk, metadata in chatbot.stream(
-            {
-                "messages": [HumanMessage(content=user_input)]
-            },
+        for update in chatbot.stream(
+            {"messages": [HumanMessage(content=user_input)]},
             config=CONFIG,
-            stream_mode="messages"
+            stream_mode="updates"
         ):
-            full_response += chunk.content
-            response_placeholder.markdown(full_response)
-        # Refresh the threads so the active chat jumps to the top of the list!
+            for node_name, node_output in update.items():
+                new_messages = node_output.get("messages", [])
+
+                for msg in new_messages:
+                    msg_type = getattr(msg, 'type', '')
+
+                    if msg_type == 'tool':
+                        # Display tool call indicator
+                        tool_name = getattr(msg, 'name', 'Tool')
+                        with tool_area:
+                            with st.status(f"🔧 Tool: `{tool_name}`", state="complete"):
+                                st.code(msg.content, language=None)
+
+                    elif msg_type == 'ai' and msg.content:
+                        # Typewriter effect for final AI response
+                        full_response = ""
+                        for word in str(msg.content).split(" "):
+                            full_response += word + " "
+                            response_placeholder.markdown(full_response.rstrip() + "▌")
+                            time.sleep(0.02)
+                        response_placeholder.markdown(full_response.rstrip())
+
+        # Refresh sidebar so active chat jumps to top
         st.session_state.chat_threads = retrieve_all_threads()
 
 

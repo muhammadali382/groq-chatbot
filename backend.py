@@ -1,9 +1,11 @@
 from langchain_core.messages import BaseMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
 from typing import TypedDict, Annotated
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
+from tools import tools
 import sqlite3
 from dotenv import load_dotenv
 import re
@@ -11,11 +13,12 @@ import re
 # load groq api key
 load_dotenv()
 
-# create groq chat model
+# create groq chat model and bind tools
 llm = ChatGroq(
     model="openai/gpt-oss-20b",
     temperature=0.2
 )
+llm_with_tools = llm.bind_tools(tools)
 
 # create state for the graph
 class ChatState(TypedDict):
@@ -23,12 +26,10 @@ class ChatState(TypedDict):
 
 # ******************* Utitilies Functions *******************
 
-# create chat_mode to solve user querry
+# chat_mode node: invoke LLM (with tools bound)
 def chat_mode(state: ChatState):
     messages = state['messages']
-
-    response = llm.invoke(messages)
-
+    response = llm_with_tools.invoke(messages)
     return {'messages': [response]}
 
 # create sqlite database and connect it to the backend
@@ -98,7 +99,11 @@ def retrieve_all_threads():
 # create and compile graph
 graph = StateGraph(ChatState)
 graph.add_node('chat_mode', chat_mode)
+graph.add_node('tools', ToolNode(tools))
+
 graph.add_edge(START, 'chat_mode')
-graph.add_edge('chat_mode', END)
+graph.add_conditional_edges('chat_mode', tools_condition)  # → tools or END
+graph.add_edge('tools', 'chat_mode')                       # loop back after tool
+
 chatbot = graph.compile(checkpointer=checkpointer)
 
