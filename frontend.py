@@ -25,10 +25,9 @@ def gen_prechat(config):
                 st.write(message.content)
 
         elif msg_type == 'tool':
-            # Show previously used tools as collapsed status boxes
-            with st.chat_message('assistant'):
-                with st.status(f"🔧 Tool: `{message.name}`", state="complete"):
-                    st.code(message.content, language=None)
+            # Standalone tool status box — no assistant bubble wrapper
+            with st.status(f"🔧 Tool: `{message.name}`", state="complete"):
+                st.code(message.content, language=None)
 
         elif msg_type == 'ai' and message.content:
             with st.chat_message('assistant'):
@@ -91,8 +90,10 @@ if user_input:
         st.write(user_input)
 
 
+    # Tool indicators sit between user bubble and AI bubble (standalone)
+    tool_area = st.container()
+
     with st.chat_message("assistant"):
-        tool_area = st.container()       # tool indicators render here
         response_placeholder = st.empty()
         full_response = ""
 
@@ -108,7 +109,6 @@ if user_input:
                     msg_type = getattr(msg, 'type', '')
 
                     if msg_type == 'tool':
-                        # Display tool call indicator
                         tool_name = getattr(msg, 'name', 'Tool')
                         with tool_area:
                             with st.status(f"🔧 Tool: `{tool_name}`", state="complete"):
@@ -123,8 +123,8 @@ if user_input:
                             time.sleep(0.02)
                         response_placeholder.markdown(full_response.rstrip())
 
-        # Refresh sidebar so active chat jumps to top
-        st.session_state.chat_threads = retrieve_all_threads()
+    # Refresh sidebar so active chat jumps to top
+    st.session_state.chat_threads = retrieve_all_threads()
 
 
 
